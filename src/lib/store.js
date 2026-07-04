@@ -9,7 +9,7 @@ import { supabase, hasSupabase } from './supabase'
 import { fetchVideoMeta } from './youtube'
 
 // ---------------------------------------------------------------- demo mode
-const LS = {
+export const LS = {
   read(key, fallback) {
     try {
       const v = localStorage.getItem(key)

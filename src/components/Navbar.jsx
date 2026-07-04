@@ -1,11 +1,27 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { signOut, isDemoMode } from '../lib/store'
+import { getFriendData, subscribeFriendships } from '../lib/friends'
 import { avatarHue } from '../lib/format'
 
 export default function Navbar() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const [pending, setPending] = useState(0)
+
+  useEffect(() => {
+    if (!user) {
+      setPending(0)
+      return
+    }
+    const refresh = () =>
+      getFriendData(user)
+        .then((d) => setPending(d.incoming.length))
+        .catch(() => {})
+    refresh()
+    return subscribeFriendships(user, refresh)
+  }, [user?.id])
 
   return (
     <header className="sticky top-0 z-40 border-b border-white/5 bg-ink-950/80 backdrop-blur-md">
@@ -30,6 +46,17 @@ export default function Navbar() {
         <div className="ml-auto flex items-center gap-3">
           {user ? (
             <>
+              <Link
+                to="/friends"
+                className="relative rounded-lg border border-white/10 px-3 py-1.5 text-sm text-ink-300 transition-colors hover:border-white/20 hover:text-white"
+              >
+                Friends
+                {pending > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand-500 px-1 text-[10px] font-bold text-white">
+                    {pending}
+                  </span>
+                )}
+              </Link>
               <span className="flex items-center gap-2 text-sm text-ink-300">
                 <span
                   className="grid h-8 w-8 place-items-center rounded-full text-sm font-semibold text-white"

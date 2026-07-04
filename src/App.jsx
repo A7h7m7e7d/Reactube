@@ -4,6 +4,7 @@ import Navbar from './components/Navbar'
 import Home from './pages/Home'
 import Watch from './pages/Watch'
 import Auth from './pages/Auth'
+import Friends from './pages/Friends'
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/watch/:youtubeId" element={<Watch />} />
+          <Route path="/friends" element={<Friends />} />
           <Route path="/auth" element={<Auth />} />
         </Routes>
       </div>

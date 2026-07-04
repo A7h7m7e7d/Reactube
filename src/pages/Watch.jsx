@@ -4,6 +4,7 @@ import { useAuth } from '../AuthContext'
 import { ensureVideo, getComments, watchPresence } from '../lib/store'
 import CommentComposer from '../components/CommentComposer'
 import CommentCard from '../components/CommentCard'
+import ShareModal from '../components/ShareModal'
 
 export default function Watch() {
   const { youtubeId } = useParams()
@@ -14,6 +15,7 @@ export default function Watch() {
   const [loading, setLoading] = useState(true)
   const [sort, setSort] = useState('top') // 'top' | 'new' — Reddit-style
   const [viewers, setViewers] = useState(1)
+  const [sharing, setSharing] = useState(false)
 
   useEffect(() => {
     if (!valid) return
@@ -60,15 +62,42 @@ export default function Watch() {
           {video?.author && <p className="mt-1 text-sm text-ink-300">{video.author}</p>}
         </div>
 
-        {/* Live user counter */}
-        <span className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-ink-100">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Share this video with a friend */}
+          <button
+            onClick={() => setSharing(true)}
+            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-ink-100 transition-colors hover:border-brand-500/40 hover:text-brand-400"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M16 6l-4-4-4 4M12 2v13" />
+            </svg>
+            Share
+          </button>
+
+          {/* Live user counter */}
+          <span className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-ink-100">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            {viewers} {viewers === 1 ? 'person' : 'people'} here now
           </span>
-          {viewers} {viewers === 1 ? 'person' : 'people'} here now
-        </span>
+        </div>
       </div>
+
+      <ShareModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        title="Send this video to a friend"
+        message={{
+          kind: 'video',
+          payload: {
+            youtube_id: youtubeId,
+            title: video?.title || null,
+            thumbnail_url: video?.thumbnail_url || `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
+          },
+        }}
+      />
 
       {/* Comments */}
       <section className="mt-8">
@@ -118,6 +147,7 @@ export default function Watch() {
                 key={c.id}
                 comment={c}
                 youtubeId={youtubeId}
+                videoTitle={video?.title}
                 onDeleted={(id) => setComments((prev) => prev.filter((x) => x.id !== id))}
               />
             ))

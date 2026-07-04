@@ -3,6 +3,7 @@ import { useAuth } from '../AuthContext'
 import { deleteComment, reportComment, voteComment } from '../lib/store'
 import { timeAgo, avatarHue } from '../lib/format'
 import MediaWithOverlay from './MediaWithOverlay'
+import ShareModal from './ShareModal'
 
 function VoteArrow({ dir, active, onClick }) {
   return (
@@ -32,9 +33,10 @@ function VoteArrow({ dir, active, onClick }) {
   )
 }
 
-export default function CommentCard({ comment, youtubeId, onDeleted }) {
+export default function CommentCard({ comment, youtubeId, videoTitle, onDeleted }) {
   const { user } = useAuth()
   const [reported, setReported] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [score, setScore] = useState(comment.score || 0)
   const [myVote, setMyVote] = useState(comment.my_vote || 0)
@@ -109,6 +111,12 @@ export default function CommentCard({ comment, youtubeId, onDeleted }) {
           <span className="text-xs text-ink-500">{timeAgo(comment.created_at)}</span>
 
           <span className="ml-auto flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={() => setSharing(true)}
+              className="rounded-md px-2 py-1 text-xs text-ink-500 transition-colors hover:bg-white/5 hover:text-ink-300"
+            >
+              Share
+            </button>
             {mine ? (
               <button
                 onClick={remove}
@@ -146,6 +154,28 @@ export default function CommentCard({ comment, youtubeId, onDeleted }) {
           </div>
         )}
       </div>
+
+      <ShareModal
+        open={sharing}
+        onClose={() => setSharing(false)}
+        title="Send this comment to a friend"
+        message={{
+          kind: 'comment',
+          payload: {
+            youtube_id: youtubeId,
+            video_title: videoTitle || null,
+            // Snapshot the comment so the share still renders if it's deleted
+            comment: {
+              display_name: name,
+              body_text: comment.body_text,
+              media_url: comment.media_url,
+              media_type: comment.media_type,
+              overlay_text: comment.overlay_text,
+              overlay_position: comment.overlay_position,
+            },
+          },
+        }}
+      />
     </article>
   )
 }
