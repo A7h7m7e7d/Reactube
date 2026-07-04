@@ -30,20 +30,29 @@ const notifyAuth = (user) => authListeners.forEach((fn) => fn(user))
 export const isDemoMode = !hasSupabase
 
 // -------------------------------------------------------------------- auth
+const mapUser = (u) =>
+  u
+    ? { id: u.id, email: u.email, display_name: u.user_metadata?.display_name || u.email.split('@')[0] }
+    : null
+
 export async function getUser() {
   if (hasSupabase) {
-    const { data } = await supabase.auth.getUser()
-    const u = data?.user
-    return u
-      ? { id: u.id, email: u.email, display_name: u.user_metadata?.display_name || u.email.split('@')[0] }
-      : null
+    // getSession reads the locally stored session (no network round-trip)
+    const { data } = await supabase.auth.getSession()
+    return mapUser(data?.session?.user)
   }
   return LS.read('demo.user', null)
 }
 
 export function onAuthChange(fn) {
   if (hasSupabase) {
-    const { data } = supabase.auth.onAuthStateChange(async () => fn(await getUser()))
+    // IMPORTANT: no other supabase.auth calls inside this callback — the
+    // client holds an internal lock while emitting auth events, so calling
+    // e.g. auth.getUser() here deadlocks the whole client (sign-in appears
+    // to hang until a page refresh). Build the user from the session param.
+    const { data } = supabase.auth.onAuthStateChange((_event, session) =>
+      fn(mapUser(session?.user))
+    )
     return () => data.subscription.unsubscribe()
   }
   authListeners.add(fn)
@@ -123,18 +132,27 @@ export async function ensureVideo(youtubeId) {
   return row
 }
 
-/** Recently watched videos (for the home page shelf). */
-export async function recentVideos(limit = 8) {
-  if (hasSupabase) {
-    const { data } = await supabase
-      .from('videos')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit)
-    return data || []
-  }
-  const videos = Object.values(LS.read('demo.videos', {}))
-  return videos.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit)
+// Watch history lives in localStorage in both backends, so the home shelf
+// only ever shows what was watched in *this* browser — not a global feed of
+// every video any account ever opened.
+const HISTORY_KEY = 'reactube.history'
+
+/** Record a watched video in this browser's history (deduped, newest first). */
+export function recordWatch(video) {
+  if (!video?.youtube_id) return
+  const list = LS.read(HISTORY_KEY, []).filter((v) => v.youtube_id !== video.youtube_id)
+  list.unshift({
+    youtube_id: video.youtube_id,
+    title: video.title,
+    thumbnail_url: video.thumbnail_url,
+    watched_at: new Date().toISOString(),
+  })
+  LS.write(HISTORY_KEY, list.slice(0, 24))
+}
+
+/** Recently watched videos in this browser (for the home page shelf). */
+export function watchHistory(limit = 8) {
+  return LS.read(HISTORY_KEY, []).slice(0, limit)
 }
 
 // ---------------------------------------------------------------- comments

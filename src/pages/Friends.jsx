@@ -345,7 +345,7 @@ export default function Friends() {
               <li key={f.friendship_id} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5">
                 <Avatar profile={f.profile} size="h-8 w-8 text-sm" />
                 <span className="min-w-0 flex-1 truncate text-sm text-ink-100">
-                  {f.profile.display_name}
+                  {f.profile?.display_name}
                 </span>
                 <button
                   onClick={() => act(acceptRequest, f.friendship_id)}
@@ -376,7 +376,7 @@ export default function Friends() {
               <li key={f.friendship_id} className="flex items-center gap-2.5 rounded-xl px-2 py-1.5">
                 <Avatar profile={f.profile} size="h-8 w-8 text-sm" />
                 <span className="min-w-0 flex-1 truncate text-sm text-ink-300">
-                  {f.profile.display_name}
+                  {f.profile?.display_name}
                 </span>
                 <span className="text-xs text-ink-500">pending</span>
                 <button
@@ -414,7 +414,7 @@ export default function Friends() {
                 >
                   <Avatar profile={f.profile} size="h-8 w-8 text-sm" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                    {f.profile.display_name}
+                    {f.profile?.display_name}
                   </span>
                 </button>
               </li>

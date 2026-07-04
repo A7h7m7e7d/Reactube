@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { extractVideoId } from '../lib/youtube'
-import { recentVideos } from '../lib/store'
+import { watchHistory } from '../lib/store'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -10,7 +10,7 @@ export default function Home() {
   const [recent, setRecent] = useState([])
 
   useEffect(() => {
-    recentVideos().then(setRecent).catch(() => {})
+    setRecent(watchHistory())
   }, [])
 
   const go = (e) => {

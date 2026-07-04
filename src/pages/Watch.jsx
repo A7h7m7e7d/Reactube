@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
-import { ensureVideo, getComments, watchPresence } from '../lib/store'
+import { ensureVideo, getComments, recordWatch, watchPresence } from '../lib/store'
 import CommentComposer from '../components/CommentComposer'
 import CommentCard from '../components/CommentCard'
 import ShareModal from '../components/ShareModal'
@@ -27,6 +27,7 @@ export default function Watch() {
     setVideo(v)
     setComments(c)
     setLoading(false)
+    recordWatch(v)
   }, [youtubeId, sort])
 
   useEffect(() => {

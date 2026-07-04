@@ -92,7 +92,7 @@ export async function getFriendData(user) {
   }
 
   const out = { friends: [], incoming: [], outgoing: [] }
-  for (const f of rows) {
+  for (const f of rows.filter((f) => f.profile)) {
     const item = { friendship_id: f.id, status: f.status, profile: f.profile }
     if (f.status === 'accepted') out.friends.push(item)
     else if (f.addressee_id === user.id) out.incoming.push(item)
