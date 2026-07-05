@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { signIn, signUp, isDemoMode } from '../lib/store'
 
 export default function Auth() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [mode, setMode] = useState('signin') // 'signin' | 'signup'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -28,7 +29,10 @@ export default function Auth() {
       } else {
         await signIn({ email, password })
       }
-      navigate(-1)
+      // Go back to where the user came from; if /auth was opened directly
+      // (no in-app history), going back would leave the site — go home.
+      if (location.key === 'default') navigate('/', { replace: true })
+      else navigate(-1)
     } catch (err) {
       setError(
         /email not confirmed/i.test(err.message)

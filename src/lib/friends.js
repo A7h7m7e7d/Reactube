@@ -226,8 +226,11 @@ export function subscribeMessages(friendshipId, onMessage) {
     localListeners.get(friendshipId).add(onMessage)
     return () => localListeners.get(friendshipId)?.delete(onMessage)
   }
+  // Channel names must be unique per subscription: supabase.channel(name)
+  // returns an existing channel with the same name, and adding callbacks to
+  // an already-subscribed channel throws (black-screens the app).
   const channel = supabase
-    .channel(`messages:${friendshipId}`)
+    .channel(`messages:${friendshipId}:${crypto.randomUUID()}`)
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `friendship_id=eq.${friendshipId}` },
@@ -242,8 +245,10 @@ export function subscribeMessages(friendshipId, onMessage) {
 /** Re-fires whenever any of my friendships change (new request, accept, …). */
 export function subscribeFriendships(user, onChange) {
   if (!hasSupabase || !user) return () => {}
+  // Unique name per subscription — the navbar badge and the Friends page
+  // both subscribe at once (see note in subscribeMessages).
   const channel = supabase
-    .channel(`friendships:${user.id}`)
+    .channel(`friendships:${user.id}:${crypto.randomUUID()}`)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships' }, () => onChange())
     .subscribe()
   return () => {
