@@ -155,9 +155,10 @@ function ChatPane({ user, chat, addableFriends, onBack, onLeave, onAddMember }) 
     }
   }, [chat.kind, chat.id])
 
-  // Everything visible in an open chat counts as read
+  // Everything visible in an open chat counts as read. Anchor the read
+  // marker to the newest message's (server-side) timestamp, not our clock.
   useEffect(() => {
-    if (messages !== null) markRead(user, chat)
+    if (messages !== null) markRead(user, chat, messages[messages.length - 1]?.created_at)
   }, [messages, chat.kind, chat.id])
 
   useEffect(() => {

@@ -410,20 +410,25 @@ export async function getUnreadCounts(user) {
   return { total, byChat }
 }
 
-/** Mark a chat as fully read (called when it's open on screen). */
-export async function markRead(user, chat) {
+/**
+ * Mark a chat as fully read (called when it's open on screen). Pass `upTo`
+ * (the newest visible message's created_at) so the marker uses the server's
+ * clock — stamping with the local clock leaves messages "unread" for anyone
+ * whose machine runs behind the database.
+ */
+export async function markRead(user, chat, upTo) {
   if (!user) return
   if (hasSupabase) {
     await supabase.from('chat_reads').upsert({
       user_id: user.id,
       chat_kind: chat.kind,
       chat_id: chat.id,
-      last_read_at: new Date().toISOString(),
+      last_read_at: upTo || new Date().toISOString(),
     })
   } else {
     const key = `demo.reads.${user.id}`
     const reads = LS.read(key, {})
-    reads[chatKey(chat)] = new Date().toISOString()
+    reads[chatKey(chat)] = upTo || new Date().toISOString()
     LS.write(key, reads)
   }
   // Same-tab badges (navbar) refresh immediately
