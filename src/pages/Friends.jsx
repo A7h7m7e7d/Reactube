@@ -2,15 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import {
+  chatKey,
   searchUsers,
   getFriendData,
   sendFriendRequest,
   acceptRequest,
   removeFriendship,
+  getGroups,
+  createGroup,
+  addGroupMember,
+  leaveGroup,
   getMessages,
   sendMessage,
   subscribeMessages,
   subscribeFriendships,
+  subscribeInbox,
+  getUnreadCounts,
+  markRead,
+  onUnreadChanged,
 } from '../lib/friends'
 import { timeAgo, avatarHue } from '../lib/format'
 import MediaWithOverlay from '../components/MediaWithOverlay'
@@ -26,8 +35,17 @@ function Avatar({ profile, size = 'h-9 w-9 text-sm' }) {
   )
 }
 
+function UnreadChip({ count }) {
+  if (!count) return null
+  return (
+    <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-brand-500 px-1.5 text-[10px] font-bold text-white">
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
 /** One chat message. Text bubbles, or rich cards for shared videos/comments. */
-function MessageBubble({ m, mine }) {
+function MessageBubble({ m, mine, showSender }) {
   const align = mine ? 'items-end' : 'items-start'
   const bubble = mine
     ? 'bg-brand-500/15 border-brand-500/20'
@@ -36,6 +54,15 @@ function MessageBubble({ m, mine }) {
   return (
     <div className={`flex flex-col ${align}`}>
       <div className={`max-w-[85%] rounded-2xl border px-3.5 py-2.5 ${bubble}`}>
+        {showSender && !mine && (
+          <p
+            className="mb-1 text-[11px] font-semibold"
+            style={{ color: `hsl(${avatarHue(m.sender_id)} 70% 65%)` }}
+          >
+            {m.display_name || 'anon'}
+          </p>
+        )}
+
         {m.kind === 'video' && m.payload && (
           <Link
             to={`/watch/${m.payload.youtube_id}`}
@@ -102,11 +129,17 @@ function MessageBubble({ m, mine }) {
   )
 }
 
-function ChatPane({ user, friend, onBack, onUnfriend }) {
+/**
+ * Chat pane for a friend or group conversation.
+ * chat: { kind: 'friend'|'group', id, title } plus profile (friend) or
+ * group + addable friends (group).
+ */
+function ChatPane({ user, chat, addableFriends, onBack, onLeave, onAddMember }) {
   const [messages, setMessages] = useState(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef(null)
+  const isGroup = chat.kind === 'group'
 
   const appendUnique = (msg) =>
     setMessages((prev) => (prev?.some((m) => m.id === msg.id) ? prev : [...(prev || []), msg]))
@@ -114,13 +147,18 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
   useEffect(() => {
     let mounted = true
     setMessages(null)
-    getMessages(user, friend.friendship_id).then((list) => mounted && setMessages(list))
-    const unsub = subscribeMessages(friend.friendship_id, appendUnique)
+    getMessages(user, chat).then((list) => mounted && setMessages(list))
+    const unsub = subscribeMessages(chat, appendUnique)
     return () => {
       mounted = false
       unsub()
     }
-  }, [friend.friendship_id])
+  }, [chat.kind, chat.id])
+
+  // Everything visible in an open chat counts as read
+  useEffect(() => {
+    if (messages !== null) markRead(user, chat)
+  }, [messages, chat.kind, chat.id])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
@@ -132,7 +170,7 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
     if (!body || sending) return
     setSending(true)
     try {
-      const msg = await sendMessage(user, friend.friendship_id, { kind: 'text', body })
+      const msg = await sendMessage(user, chat, { kind: 'text', body })
       appendUnique(msg)
       setDraft('')
     } finally {
@@ -151,18 +189,43 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
         >
           ←
         </button>
-        <Avatar profile={friend.profile} />
+        {isGroup ? (
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-700 text-sm">
+            👥
+          </span>
+        ) : (
+          <Avatar profile={chat.profile} />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-ink-100">
-            {friend.profile.display_name}
+          <p className="truncate text-sm font-semibold text-ink-100">{chat.title}</p>
+          <p className="truncate text-xs text-ink-500">
+            {isGroup
+              ? `${chat.group.members.length} members — ${chat.group.members
+                  .map((m) => m.display_name)
+                  .join(', ')}`
+              : 'friend'}
           </p>
-          <p className="text-xs text-ink-500">friend</p>
         </div>
+
+        {isGroup && chat.group.owner_id === user.id && addableFriends.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => e.target.value && onAddMember(e.target.value)}
+            className="max-w-28 rounded-lg border border-white/10 bg-ink-950 px-2 py-1.5 text-xs text-ink-300 focus:outline-none"
+          >
+            <option value="">+ Add…</option>
+            {addableFriends.map((f) => (
+              <option key={f.profile.id} value={f.profile.id}>
+                {f.profile.display_name}
+              </option>
+            ))}
+          </select>
+        )}
         <button
-          onClick={onUnfriend}
+          onClick={onLeave}
           className="rounded-lg px-2.5 py-1.5 text-xs text-ink-500 transition-colors hover:bg-brand-500/10 hover:text-brand-400"
         >
-          Unfriend
+          {isGroup ? (chat.group.owner_id === user.id ? 'Delete group' : 'Leave') : 'Unfriend'}
         </button>
       </div>
 
@@ -185,7 +248,9 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
             </div>
           </div>
         ) : (
-          messages.map((m) => <MessageBubble key={m.id} m={m} mine={m.sender_id === user.id} />)
+          messages.map((m) => (
+            <MessageBubble key={m.id} m={m} mine={m.sender_id === user.id} showSender={isGroup} />
+          ))
         )}
       </div>
 
@@ -194,7 +259,7 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Message ${friend.profile.display_name}…`}
+          placeholder={`Message ${chat.title}…`}
           className="min-w-0 flex-1 rounded-xl border border-white/10 bg-ink-950 px-3.5 py-2.5 text-sm text-ink-100 placeholder:text-ink-500 focus:border-brand-500/50 focus:outline-none"
         />
         <button
@@ -212,28 +277,48 @@ function ChatPane({ user, friend, onBack, onUnfriend }) {
 export default function Friends() {
   const { user, loading } = useAuth()
   const [data, setData] = useState({ friends: [], incoming: [], outgoing: [] })
+  const [groups, setGroups] = useState([])
+  const [unread, setUnread] = useState({ total: 0, byChat: {} })
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [searchMsg, setSearchMsg] = useState('')
-  const [selected, setSelected] = useState(null) // friendship item from data.friends
+  const [selected, setSelected] = useState(null) // { kind, id, title, profile?/group? }
   const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [groupPick, setGroupPick] = useState([]) // profile ids for the new group
 
   const refresh = useCallback(() => {
     if (!user) return
-    getFriendData(user)
-      .then((d) => {
+    Promise.all([getFriendData(user), getGroups(user), getUnreadCounts(user)])
+      .then(([d, g, u]) => {
         setData(d)
-        // Keep the open chat in sync (e.g. unfriended from the other side)
-        setSelected((sel) =>
-          sel ? d.friends.find((f) => f.friendship_id === sel.friendship_id) || null : null
-        )
+        setGroups(g)
+        setUnread(u)
+        // Keep the open chat in sync (unfriended / group changed elsewhere)
+        setSelected((sel) => {
+          if (!sel) return null
+          if (sel.kind === 'friend') {
+            const f = d.friends.find((x) => x.friendship_id === sel.id)
+            return f
+              ? { kind: 'friend', id: f.friendship_id, title: f.profile.display_name, profile: f.profile }
+              : null
+          }
+          const grp = g.find((x) => x.id === sel.id)
+          return grp ? { kind: 'group', id: grp.id, title: grp.name, group: grp } : null
+        })
       })
       .catch((e) => setError(e.message))
   }, [user?.id])
 
   useEffect(() => {
     refresh()
-    return subscribeFriendships(user, refresh)
+    const subs = [
+      subscribeFriendships(user, refresh),
+      subscribeInbox(user, refresh),
+      onUnreadChanged(refresh),
+    ]
+    return () => subs.forEach((fn) => fn())
   }, [refresh])
 
   // Debounced people search
@@ -275,6 +360,22 @@ export default function Friends() {
     [...data.friends, ...data.incoming, ...data.outgoing].map((f) => f.profile?.id)
   )
 
+  const openFriend = (f) => {
+    setSelected({ kind: 'friend', id: f.friendship_id, title: f.profile.display_name, profile: f.profile })
+    setUnread((u) => stripChat(u, `friend:${f.friendship_id}`))
+  }
+  const openGroup = (g) => {
+    setSelected({ kind: 'group', id: g.id, title: g.name, group: g })
+    setUnread((u) => stripChat(u, `group:${g.id}`))
+  }
+  const stripChat = (u, key) => {
+    const n = u.byChat[key] || 0
+    if (!n) return u
+    const byChat = { ...u.byChat }
+    delete byChat[key]
+    return { total: u.total - n, byChat }
+  }
+
   const addFriend = async (profileId) => {
     setError('')
     try {
@@ -290,6 +391,20 @@ export default function Friends() {
     setError('')
     try {
       await fn(user, ...args)
+      refresh()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const submitGroup = async (e) => {
+    e.preventDefault()
+    setError('')
+    try {
+      await createGroup(user, groupName, groupPick)
+      setCreating(false)
+      setGroupName('')
+      setGroupPick([])
       refresh()
     } catch (e) {
       setError(e.message)
@@ -405,9 +520,9 @@ export default function Friends() {
             {data.friends.map((f) => (
               <li key={f.friendship_id}>
                 <button
-                  onClick={() => setSelected(f)}
+                  onClick={() => openFriend(f)}
                   className={`flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors ${
-                    selected?.friendship_id === f.friendship_id
+                    selected?.kind === 'friend' && selected?.id === f.friendship_id
                       ? 'bg-brand-500/10 text-ink-100'
                       : 'text-ink-300 hover:bg-white/5 hover:text-ink-100'
                   }`}
@@ -416,6 +531,112 @@ export default function Friends() {
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {f.profile?.display_name}
                   </span>
+                  <UnreadChip
+                    count={
+                      selected?.kind === 'friend' && selected.id === f.friendship_id
+                        ? 0
+                        : unread.byChat[`friend:${f.friendship_id}`]
+                    }
+                  />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Groups */}
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-500">
+            Groups <span className="text-ink-500">({groups.length})</span>
+          </h2>
+          <button
+            onClick={() => setCreating((c) => !c)}
+            className="rounded-lg bg-brand-500/15 px-2.5 py-1 text-xs font-semibold text-brand-400 transition-colors hover:bg-brand-500/25"
+          >
+            {creating ? 'Cancel' : '+ New group'}
+          </button>
+        </div>
+
+        {creating && (
+          <form
+            onSubmit={submitGroup}
+            className="mb-3 space-y-2 rounded-xl border border-white/10 bg-ink-950/60 p-3"
+          >
+            <input
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="Group name…"
+              maxLength={60}
+              className="w-full rounded-lg border border-white/10 bg-ink-950 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-500 focus:border-brand-500/50 focus:outline-none"
+            />
+            {data.friends.length === 0 ? (
+              <p className="text-xs text-ink-500">Add some friends first to invite them.</p>
+            ) : (
+              <div className="nice-scroll max-h-36 space-y-1 overflow-y-auto">
+                {data.friends.map((f) => (
+                  <label
+                    key={f.profile.id}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm text-ink-300 hover:bg-white/5"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={groupPick.includes(f.profile.id)}
+                      onChange={(e) =>
+                        setGroupPick((prev) =>
+                          e.target.checked
+                            ? [...prev, f.profile.id]
+                            : prev.filter((id) => id !== f.profile.id)
+                        )
+                      }
+                      className="accent-[#ff2d55]"
+                    />
+                    <span className="truncate">{f.profile.display_name}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={!groupName.trim()}
+              className="w-full rounded-lg bg-brand-500 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-brand-400 disabled:opacity-40"
+            >
+              Create group
+            </button>
+          </form>
+        )}
+
+        {groups.length === 0 && !creating ? (
+          <p className="text-sm text-ink-500">No groups yet — make one for the group chat energy.</p>
+        ) : (
+          <ul className="space-y-1">
+            {groups.map((g) => (
+              <li key={g.id}>
+                <button
+                  onClick={() => openGroup(g)}
+                  className={`flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors ${
+                    selected?.kind === 'group' && selected?.id === g.id
+                      ? 'bg-brand-500/10 text-ink-100'
+                      : 'text-ink-300 hover:bg-white/5 hover:text-ink-100'
+                  }`}
+                >
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink-700 text-sm">
+                    👥
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{g.name}</span>
+                    <span className="block truncate text-[11px] text-ink-500">
+                      {g.members.length} members
+                    </span>
+                  </span>
+                  <UnreadChip
+                    count={
+                      selected?.kind === 'group' && selected.id === g.id
+                        ? 0
+                        : unread.byChat[`group:${g.id}`]
+                    }
+                  />
                 </button>
               </li>
             ))}
@@ -424,6 +645,11 @@ export default function Friends() {
       </section>
     </div>
   )
+
+  const addableFriends =
+    selected?.kind === 'group'
+      ? data.friends.filter((f) => !selected.group.members.some((m) => m.id === f.profile.id))
+      : []
 
   return (
     <main className="mx-auto max-w-6xl px-4 pb-8 pt-6 sm:px-6">
@@ -445,10 +671,13 @@ export default function Friends() {
           {selected ? (
             <ChatPane
               user={user}
-              friend={selected}
+              chat={selected}
+              addableFriends={addableFriends}
               onBack={() => setSelected(null)}
-              onUnfriend={() => {
-                act(removeFriendship, selected.friendship_id)
+              onAddMember={(profileId) => act(addGroupMember, selected.id, profileId)}
+              onLeave={() => {
+                if (selected.kind === 'friend') act(removeFriendship, selected.id)
+                else act(leaveGroup, selected.group)
                 setSelected(null)
               }}
             />
@@ -456,7 +685,7 @@ export default function Friends() {
             <div className="grid h-full place-items-center p-8 text-center text-sm text-ink-500">
               <div>
                 <p className="text-3xl">💬</p>
-                <p className="mt-2">Pick a friend to start chatting.</p>
+                <p className="mt-2">Pick a friend or group to start chatting.</p>
                 <p className="mt-1 text-xs">
                   Share videos and funny comments straight into the chat from any watch page.
                 </p>

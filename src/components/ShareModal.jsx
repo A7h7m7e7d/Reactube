@@ -1,40 +1,54 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
-import { getFriendData, sendMessage } from '../lib/friends'
+import { getFriendData, getGroups, sendMessage } from '../lib/friends'
 import { avatarHue } from '../lib/format'
 
 /**
- * "Send to a friend" picker. `message` is the {kind, body?, payload} that
- * gets dropped into the chat with whichever friend(s) you pick.
+ * "Send to a friend or group" picker. `message` is the {kind, body?, payload}
+ * that gets dropped into whichever chat(s) you pick.
  */
 export default function ShareModal({ open, onClose, message, title = 'Send to a friend' }) {
   const { user } = useAuth()
-  const [friends, setFriends] = useState(null) // null = loading
-  const [sent, setSent] = useState({}) // friendship_id -> 'sending' | 'sent' | 'error'
+  const [targets, setTargets] = useState(null) // null = loading; [{chat, label, profile?}]
+  const [sent, setSent] = useState({}) // chatKey -> 'sending' | 'sent' | 'error'
 
   useEffect(() => {
     if (!open) return
     setSent({})
-    setFriends(null)
+    setTargets(null)
     if (!user) {
-      setFriends([])
+      setTargets([])
       return
     }
-    getFriendData(user)
-      .then((d) => setFriends(d.friends))
-      .catch(() => setFriends([]))
+    Promise.all([getFriendData(user), getGroups(user)])
+      .then(([d, groups]) =>
+        setTargets([
+          ...d.friends.map((f) => ({
+            chat: { kind: 'friend', id: f.friendship_id },
+            label: f.profile.display_name,
+            profile: f.profile,
+          })),
+          ...groups.map((g) => ({
+            chat: { kind: 'group', id: g.id },
+            label: g.name,
+            sub: `${g.members.length} members`,
+          })),
+        ])
+      )
+      .catch(() => setTargets([]))
   }, [open, user?.id])
 
   if (!open) return null
 
-  const send = async (friendshipId) => {
-    setSent((s) => ({ ...s, [friendshipId]: 'sending' }))
+  const send = async (t) => {
+    const key = `${t.chat.kind}:${t.chat.id}`
+    setSent((s) => ({ ...s, [key]: 'sending' }))
     try {
-      await sendMessage(user, friendshipId, message)
-      setSent((s) => ({ ...s, [friendshipId]: 'sent' }))
+      await sendMessage(user, t.chat, message)
+      setSent((s) => ({ ...s, [key]: 'sent' }))
     } catch {
-      setSent((s) => ({ ...s, [friendshipId]: 'error' }))
+      setSent((s) => ({ ...s, [key]: 'error' }))
     }
   }
 
@@ -65,13 +79,13 @@ export default function ShareModal({ open, onClose, message, title = 'Send to a 
             </Link>{' '}
             to share with friends.
           </p>
-        ) : friends === null ? (
+        ) : targets === null ? (
           <div className="space-y-2">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-11 animate-pulse rounded-xl bg-ink-800" />
             ))}
           </div>
-        ) : friends.length === 0 ? (
+        ) : targets.length === 0 ? (
           <p className="text-sm text-ink-300">
             No friends yet —{' '}
             <Link to="/friends" className="text-brand-400 hover:underline" onClick={onClose}>
@@ -81,23 +95,33 @@ export default function ShareModal({ open, onClose, message, title = 'Send to a 
           </p>
         ) : (
           <ul className="nice-scroll max-h-72 space-y-1 overflow-y-auto">
-            {friends.map((f) => {
-              const state = sent[f.friendship_id]
+            {targets.map((t) => {
+              const key = `${t.chat.kind}:${t.chat.id}`
+              const state = sent[key]
               return (
-                <li key={f.friendship_id}>
+                <li key={key}>
                   <button
-                    onClick={() => state !== 'sent' && send(f.friendship_id)}
+                    onClick={() => state !== 'sent' && send(t)}
                     disabled={state === 'sending'}
                     className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/5 disabled:opacity-60"
                   >
-                    <span
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold text-white"
-                      style={{ background: `hsl(${avatarHue(f.profile.id)} 65% 45%)` }}
-                    >
-                      {f.profile.display_name?.[0]?.toUpperCase() || '?'}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink-100">
-                      {f.profile.display_name}
+                    {t.profile ? (
+                      <span
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold text-white"
+                        style={{ background: `hsl(${avatarHue(t.profile.id)} 65% 45%)` }}
+                      >
+                        {t.label?.[0]?.toUpperCase() || '?'}
+                      </span>
+                    ) : (
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink-700 text-sm">
+                        👥
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-ink-100">
+                        {t.label}
+                      </span>
+                      {t.sub && <span className="block text-[11px] text-ink-500">{t.sub}</span>}
                     </span>
                     <span
                       className={`text-xs font-semibold ${

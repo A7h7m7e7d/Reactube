@@ -2,13 +2,19 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { signOut, isDemoMode } from '../lib/store'
-import { getFriendData, subscribeFriendships } from '../lib/friends'
+import {
+  getFriendData,
+  getUnreadCounts,
+  subscribeFriendships,
+  subscribeInbox,
+  onUnreadChanged,
+} from '../lib/friends'
 import { avatarHue } from '../lib/format'
 
 export default function Navbar() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const [pending, setPending] = useState(0)
+  const [pending, setPending] = useState(0) // friend requests + unread messages
 
   useEffect(() => {
     if (!user) {
@@ -16,11 +22,16 @@ export default function Navbar() {
       return
     }
     const refresh = () =>
-      getFriendData(user)
-        .then((d) => setPending(d.incoming.length))
+      Promise.all([getFriendData(user), getUnreadCounts(user)])
+        .then(([d, u]) => setPending(d.incoming.length + u.total))
         .catch(() => {})
     refresh()
-    return subscribeFriendships(user, refresh)
+    const subs = [
+      subscribeFriendships(user, refresh),
+      subscribeInbox(user, refresh),
+      onUnreadChanged(refresh),
+    ]
+    return () => subs.forEach((fn) => fn())
   }, [user?.id])
 
   return (
